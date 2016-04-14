@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+eval "$(~/bin/docopts -V - -h - : "$@" <<EOF
+
+Usage:
+  backup-apps-list [-d] <destination>
+
+Options:
+  -d --dry-run  Do a dry run
+
+This will create a text file at destination
+that has a list of all installed applications.
+----
+Version 0.1
+
+EOF
+)"
+
+set -o nounset      # cause error if a var is not set
+set -o errexit      # exit if there is an error
+
+# include the color variables and an error function
+source ~/bin/color_and_error.bash
+# color_and_error:
+#	  error [optional message]
+#	  colorize 'text to colorize' \
+#	           <color variable name> \
+#	           [optional 'nonl' for no newline]
+# run ~/bin/color_and_error.bash for examples
+
+
+if [[ ! -e "$destination" ]]; then
+    error "Destination: '$destination' does not exist"
+fi
+
+# temp dir for linux or darwin
+# http://unix.stackexchange.com/a/84980
+tmpfile=$(mktemp 2>/dev/null || mktemp -t 'mytmpdir')
+if [[ ! -e $tmpfile ]]; then
+    error "Temp file: $tmpfile does not exist"
+fi
+
+function prnt
+{
+    # echo $1
+    echo $1 >> $tmpfile
+}
+function mktitle
+{
+    prnt ''
+	prnt "$(echo $1 | sed 's/_/ /g')"
+	prnt "$(echo $1 | sed 's/./=/g')"
+}
+
+# cmd title_with_underscores command args...
+function cmd
+{
+    if which $2 >/dev/null; then
+        mktitle $1
+        fullcommand=${@:2}
+        # echo $fullcommand
+        $fullcommand >> $tmpfile
+    fi
+}
+
+title='Installed_OSX_app_store_applications'
+cmd $title parse-osx-application-list
+
+title='Brew_OSX_Applications'
+cmd $title brew list
+
+title='Python_2x_packages'
+cmd $title pip list
+
+title='Python_3x_packages'
+cmd $title pip3 list
+
+title='Npm_packages'
+cmd $title npm -g list -depth 0
+
+title='Emacs_packages'
+cmd $title ls -ltr ~/.emacs.d/elpa/ | sed '/^-/d'
+
+
+# echo $tmpfile
+# less $tmpfile
+rm $tmpfile
