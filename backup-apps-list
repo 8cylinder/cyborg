@@ -3,13 +3,11 @@
 eval "$(~/bin/docopts -V - -h - : "$@" <<EOF
 
 Usage:
-  backup-apps-list [-d] <destination>
+  backup-apps-list [<destination>]
 
-Options:
-  -d --dry-run  Do a dry run
+This will output to the console (or create a text file at DESTINATION
+if specified) that has a list of all installed applications.
 
-This will create a text file at destination
-that has a list of all installed applications.
 ----
 Version 0.1
 
@@ -21,67 +19,67 @@ set -o errexit      # exit if there is an error
 
 # include the color variables and an error function
 source ~/bin/color_and_error.bash
-# color_and_error:
-#	  error [optional message]
-#	  colorize 'text to colorize' \
-#	           <color variable name> \
-#	           [optional 'nonl' for no newline]
-# run ~/bin/color_and_error.bash for examples
 
-
-if [[ ! -e "$destination" ]]; then
-    error "Destination: '$destination' does not exist"
+echo $destination
+if [[ $destination ]]; then
+    if [[ ! -e $(dirname "$destination") ]]; then
+        error "Destination: $(dirname "$destination") does not exist"
+    fi
 fi
 
-# temp dir for linux or darwin
-# http://unix.stackexchange.com/a/84980
-tmpfile=$(mktemp 2>/dev/null || mktemp -t 'mytmpdir')
-if [[ ! -e $tmpfile ]]; then
-    error "Temp file: $tmpfile does not exist"
-fi
+tmpfile=$(mktemp)
 
-function prnt
+function title
 {
-    # echo $1
-    echo $1 >> $tmpfile
-}
-function mktitle
-{
-    prnt ''
-	prnt "$(echo $1 | sed 's/_/ /g')"
-	prnt "$(echo $1 | sed 's/./=/g')"
+    echo >> $tmpfile
+	echo "$@" >> $tmpfile
+	echo "$(echo "$@" | sed 's/./=/g')" >> $tmpfile
 }
 
-# cmd title_with_underscores command args...
 function cmd
 {
-    if which $2 >/dev/null; then
-        mktitle $1
-        fullcommand=${@:2}
-        # echo $fullcommand
-        $fullcommand >> $tmpfile
+    echo $@ >> $tmpfile
+    if which $1 >/dev/null; then
+        echo >> $tmpfile
+        $@ >> $tmpfile
     fi
 }
 
-title='Installed_OSX_app_store_applications'
-cmd $title parse-osx-application-list
+if [[ $OSTYPE =~ 'darwin' ]]; then
+    title 'Installed OSX app store applications'
+    cmd parse-osx-application-list
 
-title='Brew_OSX_Applications'
-cmd $title brew list
+    title 'Brew OSX Applications'
+    cmd brew list
+fi
 
-title='Python_2x_packages'
-cmd $title pip list
+if [[ $OSTYPE =~ 'linux' ]]; then
+    title 'Apt manualy installed'
+    cmd comm -23 \
+        <(apt-mark showmanual | sort -u) \
+        <(gzip -dc /var/log/installer/initial-status.gz |
+                 sed -n 's/^Package: //p' | sort -u) |
+        sed '/\(linux-headers\|linux-image\)/d'
+fi
 
-title='Python_3x_packages'
-cmd $title pip3 list
+title 'Python 2x packages'
+cmd pip list
 
-title='Npm_packages'
-cmd $title npm -g list -depth 0
+title 'Python 3x packages'
+cmd pip3 list
 
-title='Emacs_packages'
-cmd $title ls -ltr ~/.emacs.d/elpa/ | sed '/^-/d'
+title 'Npm packages'
+cmd npm -g list -depth 0
+
+title 'Emacs packages'
+cmd ls -ltr ~/.emacs.d/elpa/ | sed '/^-/d'
 
 
-# echo $tmpfile
-# less $tmpfile
+
+if [[ $destination ]]; then
+    cp $tmpfile $destination
+else
+    cat $tmpfile
+fi
+
 rm $tmpfile
