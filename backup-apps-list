@@ -20,7 +20,7 @@ set -o errexit      # exit if there is an error
 # include the color variables and an error function
 source ~/bin/color_and_error.bash
 
-echo $destination
+# echo $destination
 if [[ $destination ]]; then
     if [[ ! -e $(dirname "$destination") ]]; then
         error "Destination: $(dirname "$destination") does not exist"
