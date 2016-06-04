@@ -14,8 +14,9 @@ Version 0.1
 EOF
 )"
 
-set -o nounset      # cause error if a var is not set
-set -o errexit      # exit if there is an error
+## These might be causing the script to fail when run as a cron job:
+# set -o nounset      # cause error if a var is not set
+# set -o errexit      # exit if there is an error
 
 # include the color variables and an error function
 source ~/bin/color_and_error.bash
