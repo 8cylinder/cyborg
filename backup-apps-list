@@ -14,35 +14,20 @@ Version 0.1
 EOF
 )"
 
-## These might be causing the script to fail when run as a cron job:
-# set -o nounset      # cause error if a var is not set
-# set -o errexit      # exit if there is an error
-
-# include the color variables and an error function
-source ~/bin/color_and_error.bash
-
-# echo $destination
-if [[ $destination ]]; then
-    if [[ ! -e $(dirname "$destination") ]]; then
-        error "Destination: $(dirname "$destination") does not exist"
-    fi
-fi
-
-tmpfile=$(mktemp)
 
 function title
 {
-    echo >> $tmpfile
-	echo "$@" >> $tmpfile
-	echo "$(echo "$@" | sed 's/./=/g')" >> $tmpfile
+    echo
+	echo "$@"
+	echo "$(echo "$@" | sed 's/./=/g')"
 }
 
 function cmd
 {
-    echo $@ >> $tmpfile
+    echo $@
     if which $1 >/dev/null; then
-        echo >> $tmpfile
-        $@ >> $tmpfile
+        echo
+        $@
     fi
 }
 
@@ -73,14 +58,4 @@ title 'Npm packages'
 cmd npm -g list -depth 0
 
 title 'Emacs packages'
-cmd ls -ltr ~/.emacs.d/elpa/ | sed '/^-/d'
-
-
-
-if [[ $destination ]]; then
-    cp $tmpfile $destination
-else
-    cat $tmpfile
-fi
-
-rm $tmpfile
+cmd find ~/.emacs.d/elpa/ -maxdepth 1 -type d -exec basename \{\} \;
