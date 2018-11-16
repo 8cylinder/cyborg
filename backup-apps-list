@@ -49,10 +49,10 @@ if [[ $OSTYPE =~ 'linux' ]]; then
 fi
 
 title 'Python 2x packages'
-cmd pip list
+cmd pip list --format=freeze
 
 title 'Python 3x packages'
-cmd pip3 list
+cmd pip3 list --format=freeze
 
 title 'Npm packages'
 cmd npm -g list -depth 0
