@@ -25,34 +25,42 @@ def log(msg, msg_type='info'):
     out = f'{timestamp} :: {status} :: {msg}\n'
     sys.stdout.write(out)
 
-def error(msg):
+def log_error(msg):
     log(msg, msg_type='error')
+
+def log_cmd(msg):
+    msg = ' '.join(msg)
+    log(msg, msg_type='cmd')
+
+def error(msg):
+    log_error(msg)
     sys.exit(1)
 
 def run_prog(cmd):
+    log_cmd(cmd)
     result = subprocess.run(cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE)
     # pp(result)
-    log(' '.join(cmd), msg_type='cmd')
-    if result.stdout:
-        log(result.stdout.decode('utf-8').strip())
+    result.stdout = result.stdout.decode('utf-8').strip()
+    # if result.stdout:
+        # log(result.stdout.decode('utf-8').strip())
     if result.stderr:
         error(result.stderr.decode('utf-8').strip())
     return result
 
+def run_log(cmd):
+    pass
+
+
 
 class Borg:
-    settings_file = '/home/sm/.cyborg.ini'
+    settings_file = os.path.expanduser('~/.cyborg.ini')
+
     def __init__(self, dry_run=True):
         self.dry_run = '--dry-run'
         if not dry_run:
-            self.dry_run == ''
-
-        # check if borg is running
-        result = run_prog(['pidof', '-s', 'borg'])
-        if not result.returncode:
-            error('Borg already running')
+            self.dry_run = ''
 
         # load settings file
         settings = self.load_settings()
@@ -63,7 +71,7 @@ class Borg:
 
     def check_file(self, filename):
         if not os.path.exists(filename):
-            error(f'file does not exist: {filename}')
+            error(f'file does not exist: {filename}.')
 
     def load_settings(self):
         config = configparser.SafeConfigParser(inline_comment_prefixes=('#',))
@@ -72,14 +80,17 @@ class Borg:
         except configparser.ParsingError as e:
             msg = ' '.join(str(e).split())
             error(msg)
-        settings = config['settings']
+        try:
+            settings = config['settings']
+        except KeyError as e:
+            error(f'{self.settings_file} does not exist or does not contain a "[settings]" section.')
         try:
             self.backup_name = settings['backup_name'].strip('"\'')
             destination = settings['destination'].strip('"\'')
             exclude_list = settings['exclude_list'].strip('"\'')
             installed_list = settings['installed_list'].strip('"\'')
         except KeyError as e:
-            error(e)
+            error(f'Missing key in {self.settings_file}: {e}')
         self.destination = os.path.expanduser(destination)
         self.exclude_list = os.path.expanduser(exclude_list)
         self.installed_list = os.path.expanduser(installed_list)
@@ -88,26 +99,41 @@ class Borg:
         # show a list of all backup sets
         cmd = ['borg', 'list', self.destination]
         result = run_prog(cmd)
-        output = result.stdout.decode('utf-8').strip()
+        print(result.stdout)
+        output = result.stdout
         last_backup = output.split('\n')[-1].split()[0]
         print()
+
         # show details on the last backup set
-        cmd = ['borg', 'info', '-v', self.destination]
+        cmd = ['borg', 'info', '-v', f'{self.destination}::{last_backup}']
         result = run_prog(cmd)
+        print(result.stdout)
 
     def run(self):
-        log('starting backup')
+        # check if borg is running
+        result = run_prog(['pidof', '-sx', 'borg'])
+        if not result.returncode:
+            error('Borg already running, aborting this backup.')
+
         # generate list of installed applications
         result = run_prog(['/home/sm/bin/backup-apps-list'])
         with open(self.installed_list, 'w') as f:
-            f.write(result.stdout.decode('utf-8'))
-            log(f'wrote {self.installed_list}')
+            f.write(result.stdout)
+            log(f'wrote {self.installed_list}.')
 
         # backup
         dt = datetime.datetime.now()
         timestamp = dt.strftime('%Y-%m-%d__%H-%M')
         archive_name = f'{self.destination}::{socket.gethostname()}__{timestamp}'
-        print(archive_name)
+        log(f'starting backup to {archive_name}...')
+        cmd = ['borg', 'create', self.dry_run, '-v',
+               f'--exclude-from={self.exclude_list}',
+               '--compression=zlib,6',
+               archive_name, '~'
+        ]
+        #
+        print(' '.join(cmd))
+
 
     def rclone(self):
         log('rclone')
@@ -115,21 +141,26 @@ class Borg:
     def extras(self):
         """Print out extra commands that can be copied and pasted to the command line"""
         commands = [
-            ['init', '--encryption=none', self.destination],
-            ['restore', self.destination, '# restores to cur dir'],
+            ['init --dry-run', '--encryption=none', self.destination],
+            ['restore --dry-run', self.destination, '# CAUTION, restores to cur dir only'],
             ['break-lock', self.destination],
             ['list', self.destination],
             ['check', self.destination, '# note: takes a long time'],
+            ['mount', self.destination, 'MOUNTPOINT'],
+            ['umount', 'MOUNTPOINT'],
         ]
         print()
         print('https://borgbackup.readthedocs.io')
         print('https://github.com/borgbackup/borg')
         print()
-        [print('borg', i[0], '--dry-run', ' '.join(i[1:])) for i in commands]
+        [print('borg', ' '.join(i)) for i in commands]
 
 
 def init(args):
-    borg = Borg()
+    try:
+        borg = Borg(args.dry_run)
+    except AttributeError:
+        borg = Borg()
     result = getattr(borg, args.subparser_name)()
 
 
