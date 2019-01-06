@@ -3,7 +3,6 @@
 import os
 import sys
 import re
-# import click
 import argparse
 import textwrap
 import datetime
@@ -12,18 +11,34 @@ import configparser
 import socket
 from pprint import pprint as pp
 
+try:
+    import click
+except ModuleNotFoundError:
+    class Click:
+        def echo(self, msg, **kwargs):
+            sys.stdout.write(msg)
+        def secho(self, msg, **kwargs):
+            sys.stdout.write(msg)
+        def style(self, msg, **kwargs):
+            return msg
+    click = Click()
+
 
 def log(msg, msg_type='info'):
     dt = datetime.datetime.now()
     timestamp = dt.strftime('%y-%m-%d %X')
+    timestamp = click.style(timestamp, fg='blue')
     msg_types = {
-        'info': 'INFO',
-        'error': 'ERROR',
-        'cmd': 'CMD',
+        'info': ['INFO', 'green'],
+        'error': ['STDERR', 'red'],
+        'cmd': ['CMD', 'yellow'],
     }
-    status = msg_types[msg_type]
-    out = f'{timestamp} :: {status} :: {msg}\n'
-    sys.stdout.write(out)
+    status = msg_types[msg_type][0]
+    color = msg_types[msg_type][1]
+    status = click.style(status, fg=color, bold=True)
+    msg = click.style(msg, fg=color)
+    out = f'{timestamp} :: {status} :: {msg}'
+    click.secho(out)
 
 def log_error(msg):
     log(msg, msg_type='error')
@@ -34,6 +49,7 @@ def log_cmd(msg):
 
 def error(msg):
     log_error(msg)
+    notify(msg)
     sys.exit(1)
 
 def run_prog(cmd):
@@ -46,16 +62,22 @@ def run_prog(cmd):
     # if result.stdout:
         # log(result.stdout.decode('utf-8').strip())
     if result.stderr:
-        error(result.stderr.decode('utf-8').strip())
+        # error(result.stderr.decode('utf-8').strip())
+        log(result.stderr.decode('utf-8').strip(), msg_type='error')
+    if result.returncode:
+        error(f'return code: {result.returncode}, command: {result.args}')
     return result
 
-def run_log(cmd):
-    pass
-
-
+def notify(msg):
+    cmd = ['/home/sm/bin/cron-notify-send', msg]
+    result = subprocess.run(cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE)
 
 class Borg:
-    settings_file = os.path.expanduser('~/.cyborg.ini')
+    settings_file = os.path.expanduser('~/.cyborg/cyborg.ini')
+    installed_apps = os.path.expanduser('~/.cyborg/installed-apps.txt')
+    exclude_list = os.path.expanduser('~/.cyborg/exclude')
 
     def __init__(self, dry_run=True):
         self.dry_run = '--dry-run'
@@ -66,8 +88,8 @@ class Borg:
         settings = self.load_settings()
 
         # check all file/dir existence
-        self.check_file(self.exclude_list)
         self.check_file(self.destination)
+        self.check_file(self.exclude_list)
 
     def check_file(self, filename):
         if not os.path.exists(filename):
@@ -78,8 +100,7 @@ class Borg:
         try:
             config.read(self.settings_file)
         except configparser.ParsingError as e:
-            msg = ' '.join(str(e).split())
-            error(msg)
+            error(' '.join(str(e).split()))
         try:
             settings = config['settings']
         except KeyError as e:
@@ -87,13 +108,15 @@ class Borg:
         try:
             self.backup_name = settings['backup_name'].strip('"\'')
             destination = settings['destination'].strip('"\'')
-            exclude_list = settings['exclude_list'].strip('"\'')
-            installed_list = settings['installed_list'].strip('"\'')
+            self.remote_destination = settings['remote_destination'].strip('"\'')
         except KeyError as e:
             error(f'Missing key in {self.settings_file}: {e}')
-        self.destination = os.path.expanduser(destination)
-        self.exclude_list = os.path.expanduser(exclude_list)
-        self.installed_list = os.path.expanduser(installed_list)
+        self.destination = self.fix(destination)
+
+    def fix(self, path):
+        path = os.path.expanduser(path)
+        # path = os.path.normpath(path)
+        return path
 
     def status(self):
         # show a list of all backup sets
@@ -117,26 +140,35 @@ class Borg:
 
         # generate list of installed applications
         result = run_prog(['/home/sm/bin/backup-apps-list'])
-        with open(self.installed_list, 'w') as f:
+        with open(self.installed_apps, 'w') as f:
             f.write(result.stdout)
-            log(f'wrote {self.installed_list}.')
+            log(f'Wrote {self.installed_apps}')
 
         # backup
         dt = datetime.datetime.now()
         timestamp = dt.strftime('%Y-%m-%d__%H-%M')
         archive_name = f'{self.destination}::{socket.gethostname()}__{timestamp}'
-        log(f'starting backup to {archive_name}...')
+        log(f'Starting backup to {archive_name}')
         cmd = ['borg', 'create', self.dry_run, '-v',
                f'--exclude-from={self.exclude_list}',
                '--compression=zlib,6',
-               archive_name, '~'
+               archive_name,
+               os.path.expanduser('~')
         ]
-        #
-        print(' '.join(cmd))
-
+        # Copy cmd array and remove any empty items, this causes and error if not.
+        cmd = [i for i in cmd if i]
+        result = run_prog(cmd)
+        self.rclone()
 
     def rclone(self):
-        log('rclone')
+        result = run_prog(['pidof', '-sx', 'rclone'])
+        if not result.returncode:
+            error('rclone already running, aborting this remote upload.')
+        log(f'Starting remote backup to {self.remote_destination}')
+        cmd = ['rclone', self.dry_run, 'sync', '-v', self.destination, self.remote_destination]
+        cmd = [i for i in cmd if i]
+        result = run_prog(cmd)
+        print(result)
 
     def extras(self):
         """Print out extra commands that can be copied and pasted to the command line"""
@@ -150,10 +182,12 @@ class Borg:
             ['umount', 'MOUNTPOINT'],
         ]
         print()
-        print('https://borgbackup.readthedocs.io')
-        print('https://github.com/borgbackup/borg')
+        click.secho('https://borgbackup.readthedocs.io', fg='blue', underline=True)
+        click.secho('https://github.com/borgbackup/borg', fg='blue', underline=True)
         print()
-        [print('borg', ' '.join(i)) for i in commands]
+        for c in commands:
+            cmd = ' '.join(c)
+            click.secho(f'borg {cmd}', fg='yellow')
 
 
 def init(args):
@@ -179,6 +213,7 @@ if __name__ == '__main__':
     # run
     run = subparsers.add_parser('run', help='Run the backup')
     run.add_argument('-d', '--dry-run', action='store_true')
+    run.add_argument('-r', '--remote', action='store_true')
 
     # status
     status = subparsers.add_parser('status', help='Check the backup')
@@ -203,4 +238,7 @@ cyborg restore [--dry-run] ARCHIVENAME RESTOREPOINT
 cyborg break [--dry-run]
 cyborg list
 cyborg check
+
+borg create -v --exclude-from /home/sm/bin/backup-linux-filelist-borg.txt --compression zlib,6 /home/sm/net1/borgtest/::ubuntu-desktop__2019-01-05__11-04 /home/sm
+borg create -v --exclude-from=/home/sm/bin/backup-linux-filelist-borg.txt --compression=zlib,6 /home/sm/net1/borgtest ::ubuntu-desktop__2019-01-05__11-03 /home/sm
 """
