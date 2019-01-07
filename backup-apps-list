@@ -48,14 +48,14 @@ if [[ $OSTYPE =~ 'linux' ]]; then
         sed '/\(linux-headers\|linux-image\)/d'
 fi
 
-title 'Python 2x packages'
-cmd pip list --format=freeze
+# title 'Python 2x packages'
+# cmd pip list --format=freeze
 
-title 'Python 3x packages'
-cmd pip3 list --format=freeze
+# title 'Python 3x packages'
+# cmd pip3 list --format=freeze
 
-title 'Npm packages'
-cmd npm -g list -depth 0
+# title 'Npm packages'
+# cmd npm -g list -depth 0
 
 title 'Emacs packages'
 cmd find ~/.emacs.d/elpa/ -maxdepth 1 -type d -exec basename \{\} \;
