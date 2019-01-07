@@ -37,7 +37,7 @@ def log(msg, msg_type='info'):
     color = msg_types[msg_type][1]
     status = click.style(status, fg=color, bold=True)
     msg = click.style(msg, fg=color)
-    out = f'{timestamp} :: {status} :: {msg}'
+    out = f'{timestamp} {status}: {msg}'
     click.secho(out)
 
 def log_error(msg):
@@ -53,29 +53,24 @@ def error(msg):
     sys.exit(1)
 
 def run_prog(cmd):
+    cmd = [i for i in cmd if i]  # remove empty fields
     log_cmd(cmd)
     result = subprocess.run(cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE)
-    # pp(result)
     result.stdout = result.stdout.decode('utf-8').strip()
-    # if result.stdout:
-        # log(result.stdout.decode('utf-8').strip())
-    if result.stderr:
-        # error(result.stderr.decode('utf-8').strip())
-        log(result.stderr.decode('utf-8').strip(), msg_type='error')
-    if result.returncode:
-        error(f'return code: {result.returncode}, command: {result.args}')
+    result.stderr = result.stderr.decode('utf-8').strip()
     return result
 
 def notify(msg):
-    cmd = ['/home/sm/bin/cron-notify-send', msg]
+    title = 'Cyborg'
+    cmd = ['/home/sm/bin/cron-notify-send', title, msg]
     result = subprocess.run(cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE)
 
 class Borg:
-    settings_file = os.path.expanduser('~/.cyborg/cyborg.ini')
+    settings_file = os.path.expanduser('~/.cyborg/config.ini')
     installed_apps = os.path.expanduser('~/.cyborg/installed-apps.txt')
     exclude_list = os.path.expanduser('~/.cyborg/exclude')
 
@@ -106,7 +101,7 @@ class Borg:
         except KeyError as e:
             error(f'{self.settings_file} does not exist or does not contain a "[settings]" section.')
         try:
-            self.backup_name = settings['backup_name'].strip('"\'')
+            # self.backup_name = settings['backup_name'].strip('"\'')
             destination = settings['destination'].strip('"\'')
             self.remote_destination = settings['remote_destination'].strip('"\'')
         except KeyError as e:
@@ -132,14 +127,20 @@ class Borg:
         result = run_prog(cmd)
         print(result.stdout)
 
-    def run(self):
+    def run(self, upload_to_remote=False):
         # check if borg is running
         result = run_prog(['pidof', '-sx', 'borg'])
         if not result.returncode:
             error('Borg already running, aborting this backup.')
+        else:
+            notify('Backup started')
 
         # generate list of installed applications
-        result = run_prog(['/home/sm/bin/backup-apps-list'])
+        installed_generator = '/home/sm/bin/backup-apps-list'
+        try:
+            result = run_prog([installed_generator])
+        except FileNotFoundError:
+            error(f'Installed list generator not found: {installed_generator}')
         with open(self.installed_apps, 'w') as f:
             f.write(result.stdout)
             log(f'Wrote {self.installed_apps}')
@@ -156,38 +157,68 @@ class Borg:
                os.path.expanduser('~')
         ]
         # Copy cmd array and remove any empty items, this causes and error if not.
-        cmd = [i for i in cmd if i]
         result = run_prog(cmd)
-        self.rclone()
+        if result.returncode:
+            errmsg = result.stderr
+            # remove the usage info from the error message
+            # errmsg = re.sub('(usage.*|\[--.*|ARCHIVE \[.*)', '', errmsg).strip()
+            errmsg = errmsg.split('\n')[-1]  # last line of error message
+            error(errmsg)
+        log('Borg backup successful')
+        notify('Borg backup successful')
+        self.prune()
+        if upload_to_remote:
+            self.rclone()
+
+    def prune(self):
+        cmd = ['borg', 'prune', self.dry_run, '-v', self.destination,
+               f'--prefix="{socket.gethostname()}__"',
+               '--keep-within=10d', '--keep-weekly=4', '--keep-monthly=6', '--keep-yearly=1'
+        ]
+        result = run_prog(cmd)
+        if result.returncode:
+            errmsg = result.stderr
+            errmsg = errmsg.split('\n')[-1]  # last line of error message
+            error(errmsg)
+        log('Borg prune successful')
 
     def rclone(self):
         result = run_prog(['pidof', '-sx', 'rclone'])
         if not result.returncode:
             error('rclone already running, aborting this remote upload.')
+
         log(f'Starting remote backup to {self.remote_destination}')
         cmd = ['rclone', self.dry_run, 'sync', '-v', self.destination, self.remote_destination]
-        cmd = [i for i in cmd if i]
         result = run_prog(cmd)
-        print(result)
+        if result.returncode:
+            msg = f'Rclone failed: {result.stderr}'
+            error(msg)
+        log('Rclone successful')
+        notify('Rclone successful')
 
     def extras(self):
         """Print out extra commands that can be copied and pasted to the command line"""
         commands = [
-            ['init --dry-run', '--encryption=none', self.destination],
-            ['restore --dry-run', self.destination, '# CAUTION, restores to cur dir only'],
-            ['break-lock', self.destination],
-            ['list', self.destination],
-            ['check', self.destination, '# note: takes a long time'],
-            ['mount', self.destination, 'MOUNTPOINT'],
-            ['umount', 'MOUNTPOINT'],
+            '# Borg',
+            f'borg init --dry-run --encryption=none {self.destination}',
+            f'borg restore --dry-run {self.destination}  # CAUTION, restores to cur dir only',
+            f'borg break-lock {self.destination}',
+            f'borg list {self.destination}',
+            f'borg check {self.destination}  # note: takes a long time',
+            f'borg mount {self.destination} MOUNTPOINT',
+            f'borg umount MOUNTPOINT',
+            '',
+            '# Rclone',
+            f'rclone check {self.remote_destination}',
         ]
         print()
         click.secho('https://borgbackup.readthedocs.io', fg='blue', underline=True)
         click.secho('https://github.com/borgbackup/borg', fg='blue', underline=True)
+        click.secho('https://rclone.org', fg='blue', underline=True)
         print()
-        for c in commands:
-            cmd = ' '.join(c)
-            click.secho(f'borg {cmd}', fg='yellow')
+        for line in commands:
+            line = re.sub('(#.*)', click.style('\g<1>', fg='green'), line)
+            click.secho(line, fg='yellow')
 
 
 def init(args):
@@ -195,15 +226,28 @@ def init(args):
         borg = Borg(args.dry_run)
     except AttributeError:
         borg = Borg()
-    result = getattr(borg, args.subparser_name)()
+
+    if args.subparser_name == 'run':
+        result = borg.run(args.remote)
+    else:
+        result = getattr(borg, args.subparser_name)()
 
 
 if __name__ == '__main__':
     help_msg = textwrap.dedent('''
-        Backup using Borg
+    Backup using Borg and Rclone
 
-        https://borgbackup.readthedocs.io/en/stable/
-        https://github.com/borgbackup''')
+    https://borgbackup.readthedocs.io
+    https://github.com/borgbackup
+    https://rclone.org
+
+    Configuration information is pulled from ~/.cyborg/config.ini.
+    File exclude info is pulled from ~/.cyborg/exclude
+
+    Required support apps:
+    Generate list of installed applications: ~/bin/backup-apps-list
+    Gui notifications from cron: ~/bin/cron-nofify-send
+    ''')
 
     parser = argparse.ArgumentParser(
         description=help_msg,
@@ -228,17 +272,3 @@ if __name__ == '__main__':
     args = parser.parse_args()
     init(args)
 
-"""
-cyborg run [--dry-run]
-cyborg rsync [--dry-run]
-cyborg status
-
-cyborg init [--dry-run]
-cyborg restore [--dry-run] ARCHIVENAME RESTOREPOINT
-cyborg break [--dry-run]
-cyborg list
-cyborg check
-
-borg create -v --exclude-from /home/sm/bin/backup-linux-filelist-borg.txt --compression zlib,6 /home/sm/net1/borgtest/::ubuntu-desktop__2019-01-05__11-04 /home/sm
-borg create -v --exclude-from=/home/sm/bin/backup-linux-filelist-borg.txt --compression=zlib,6 /home/sm/net1/borgtest ::ubuntu-desktop__2019-01-05__11-03 /home/sm
-"""
