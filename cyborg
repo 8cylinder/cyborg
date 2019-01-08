@@ -30,6 +30,7 @@ def log(msg, msg_type='info'):
     timestamp = click.style(timestamp, fg='blue')
     msg_types = {
         'info': ['INFO', 'green'],
+        'warn': ['WARN', 'cyan'],
         'error': ['STDERR', 'red'],
         'cmd': ['CMD', 'yellow'],
     }
@@ -47,6 +48,9 @@ def log_cmd(msg):
     msg = ' '.join(msg)
     log(msg, msg_type='cmd')
 
+def warn(msg):
+    log(msg, msg_type='warn')
+
 def error(msg):
     log_error(msg)
     notify(msg)
@@ -63,8 +67,12 @@ def run_prog(cmd):
     return result
 
 def notify(msg):
+    notify = '/home/sm/bin/cron-notify-send'
+    if not os.path.exists(notify):
+        click.secho(f'{notify} does not exist', fg='red', bold=True)
+        sys.exit(1)
     title = 'Cyborg'
-    cmd = ['/home/sm/bin/cron-notify-send', title, msg]
+    cmd = [notify, title, msg]
     result = subprocess.run(cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE)
@@ -159,7 +167,10 @@ class Borg:
         ]
         # Copy cmd array and remove any empty items, this causes and error if not.
         result = run_prog(cmd)
-        if result.returncode:
+        print(result)
+        if result.returncode == 1:
+            warn(result.stderr)
+        elif result.returncode == 2:
             errmsg = result.stderr
             # remove the usage info from the error message
             # errmsg = re.sub('(usage.*|\[--.*|ARCHIVE \[.*)', '', errmsg).strip()
