@@ -152,6 +152,7 @@ class Borg:
         log(f'Starting backup to {archive_name}')
         cmd = ['borg', 'create', self.dry_run, '-v',
                f'--exclude-from={self.exclude_list}',
+               '--one-file-system',
                '--compression=zlib,6',
                archive_name,
                os.path.expanduser('~')
@@ -272,3 +273,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     init(args)
 
+    'sudo sync; echo 1 | sudo tee /proc/sys/vm/drop_caches'
