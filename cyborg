@@ -29,10 +29,10 @@ def log(msg, msg_type='info'):
     timestamp = dt.strftime('%y-%m-%d %X')
     timestamp = click.style(timestamp, fg='blue')
     msg_types = {
-        'info': ['INFO', 'green'],
-        'warn': ['WARN', 'cyan'],
-        'error': ['STDERR', 'red'],
-        'cmd': ['CMD', 'yellow'],
+        'info':  ['INFO', 'green'],
+        'warn':  ['WARN', 'red'],
+        'error': [' ERR', 'red'],
+        'cmd':   [' CMD', 'yellow'],
     }
     status = msg_types[msg_type][0]
     color = msg_types[msg_type][1]
@@ -165,9 +165,7 @@ class Borg:
                archive_name,
                os.path.expanduser('~')
         ]
-        # Copy cmd array and remove any empty items, this causes and error if not.
         result = run_prog(cmd)
-        print(result)
         if result.returncode == 1:
             warn(result.stderr)
         elif result.returncode == 2:
@@ -203,8 +201,9 @@ class Borg:
         cmd = ['rclone', self.dry_run, 'sync', '-v', self.destination, self.remote_destination]
         result = run_prog(cmd)
         if result.returncode:
-            msg = f'Rclone failed: {result.stderr}'
-            error(msg)
+            errmsg = result.stderr
+            errmsg = errmsg.split('\n')[-1]  # last line of error message
+            error(errmsg)
         log('Rclone successful')
         notify('Rclone successful')
 
