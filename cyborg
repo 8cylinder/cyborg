@@ -285,7 +285,7 @@ def init(args):
 
 if __name__ == '__main__':
     help_msg = textwrap.dedent('''
-    Backup using Borg and Rclone
+    🤖 Backup using Borg and Rclone
 
     https://borgbackup.readthedocs.io
     https://github.com/borgbackup
