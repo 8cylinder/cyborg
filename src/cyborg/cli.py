@@ -23,7 +23,7 @@ def init(cli_args):
         borg = Borg(backup_name=cli_args.name)
 
     if cli_args.subparser_name == 'run':
-        borg.run(cli_args.remote)
+        borg.run()
     elif cli_args.subparser_name == 'prune':
         borg.prune()
     else:
@@ -32,11 +32,10 @@ def init(cli_args):
 
 def main():
     help_msg = textwrap.dedent('''
-    🤖 Backup using Borg and Rclone
+    🤖 Backup using Borg
 
     https://borgbackup.readthedocs.io
     https://github.com/borgbackup
-    https://rclone.org
 
     Usage: cyborg NAME COMMAND [OPTIONS]
       eg:  cyborg nas run
@@ -55,7 +54,7 @@ def main():
     INI file sections:
     ------------------
     Each [section] is a named profile with destination, source, and
-    exclude fields. Optionally: passphrase, remote_destination.
+    exclude fields. Optionally: passphrase.
     ''')
 
     parser = argparse.ArgumentParser(
@@ -68,7 +67,6 @@ def main():
     # run
     run = subparsers.add_parser('run', help='Run the backup')
     run.add_argument('-d', '--dry-run', default=False, action='store_true')
-    run.add_argument('-r', '--remote', action='store_true')
 
     # prune
     prune = subparsers.add_parser('prune', help='Prune the repo')
@@ -76,11 +74,6 @@ def main():
 
     # status
     subparsers.add_parser('status', help='Check the backup')
-
-    # rclone
-    rclone = subparsers.add_parser(
-        'rclone', help='Use rclone to copy the repo to remote storage')
-    rclone.add_argument('-d', '--dry-run', action='store_true')
 
     # extras
     subparsers.add_parser(

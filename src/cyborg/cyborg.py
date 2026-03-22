@@ -246,11 +246,6 @@ class Borg:
         except KeyError as e:
             error(f'Key not set in {self.settings_file}: {e}')
 
-        try:
-            self.remote_destination = settings['remote_destination'].strip('"\'')
-        except KeyError:
-            self.remote_destination = None
-
         self.destination = os.path.expanduser(destination)
 
         try:
@@ -307,7 +302,7 @@ class Borg:
         with open(self.timestamp_file, 'w') as f:
             f.write(timestamp)
 
-    def run(self, upload_to_remote=False, backup_name='settings'):
+    def run(self):
         # generate list of installed applications
         installed_generator = '/home/sm/bin/backup-apps-list'
         result = run_prog([installed_generator])
