@@ -4,7 +4,7 @@ import textwrap
 from .cyborg import Borg, show_config_info, copy_default_config
 
 
-def init(cli_args):
+def init(cli_args: argparse.Namespace) -> None:
     if cli_args.subparser_name == 'config':
         action = getattr(cli_args, 'action', None)
         if action == 'copy':
@@ -30,7 +30,7 @@ def init(cli_args):
         getattr(borg, cli_args.subparser_name)()
 
 
-def main():
+def main() -> None:
     help_msg = textwrap.dedent('''
     🤖 Backup using Borg
 

@@ -9,26 +9,14 @@ import socket
 import shutil
 from importlib.resources import files
 from pathlib import Path
+from typing import Optional
 from platformdirs import user_config_dir
 
 
-try:
-    import click
-except ModuleNotFoundError:
-    class Click:
-        def echo(self, msg, **kwargs):
-            sys.stdout.write(msg)
-
-        def secho(self, msg, **kwargs):
-            sys.stdout.write(msg)
-
-        def style(self, msg, **kwargs):
-            return msg
-
-    click = Click()
+import click
 
 
-def log(msg, msg_type='info'):
+def log(msg: str, msg_type: str = 'info') -> None:
     dt = datetime.datetime.now()
     timestamp = dt.strftime('%y-%m-%d %X')
     timestamp = click.style(timestamp, fg='blue')
@@ -46,21 +34,21 @@ def log(msg, msg_type='info'):
     click.secho(out)
 
 
-def log_error(msg):
+def log_error(msg: str) -> None:
     log(msg, msg_type='error')
 
 
-def log_cmd(msg):
+def log_cmd(msg: str | list[str]) -> None:
     if isinstance(msg, list):
         msg = ' '.join(msg)
     log(msg, msg_type='cmd')
 
 
-def warn(msg):
+def warn(msg: str) -> None:
     log(msg, msg_type='warn')
 
 
-def error(msg):
+def error(msg: str) -> None:
     log_error(msg)
     now = datetime.datetime.now().isoformat()
     alert_filename = f'CYBORG-ERROR--{now}--{"!" * 50}'
@@ -70,44 +58,44 @@ def error(msg):
     sys.exit(1)
 
 
-def run_prog(cmd):
+def run_prog(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     cmd = [i for i in cmd if i]  # remove empty fields
     # Convert command list into a string since prune requires a shell
     # to work.  But `shell=True` requires a string for the command.
-    cmd = ' '.join(cmd)
-    log_cmd(cmd)
+    cmd_str = ' '.join(cmd)
+    log_cmd(cmd_str)
     result = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        shell=True
+        cmd_str,
+        capture_output=True,
+        shell=True,
+        text=True,
     )
-    result.stdout = result.stdout.decode('utf-8').strip()
-    result.stderr = result.stderr.decode('utf-8').strip()
+    result.stdout = result.stdout.strip()
+    result.stderr = result.stderr.strip()
     return result
 
 
-def columnize(data):
+def columnize(data: str) -> str | bool:
     import math
     from itertools import zip_longest
 
-    data = [i for i in data.split('\n') if i]
-    if not data:
+    rows = [i for i in data.split('\n') if i]
+    if not rows:
         return False
 
     spaces_between_columns = 2
     spaces = ' ' * spaces_between_columns
-    max_word_len = max([len(i) for i in data])
+    max_word_len = max([len(i) for i in rows])
     display_width, _ = shutil.get_terminal_size()
     columns = int(display_width / (max_word_len + spaces_between_columns))
 
-    backups = len(data)
+    backups = len(rows)
     chunk_len = math.ceil(backups / columns)
     chunks = []
     for i in range(columns):
         start = i * chunk_len
         end = (i + 1) * chunk_len
-        chunks.append(data[start:end])
+        chunks.append(rows[start:end])
 
     columnized = ''
     for row in zip_longest(*chunks, fillvalue=''):
@@ -115,7 +103,7 @@ def columnize(data):
     return columnized.strip()
 
 
-def get_config_dir():
+def get_config_dir() -> str:
     """
     Check for configuration directory in standard locations using platformdirs.
     Falls back to legacy ~/.cyborg if the standard location doesn't exist but the legacy one does.
@@ -145,7 +133,7 @@ def get_config_dir():
     return config_dir
 
 
-def _config_dirs():
+def _config_dirs() -> list[tuple[str, str]]:
     """Return list of (label, path) for all candidate config directories."""
     platform_dir = user_config_dir("cyborg")
     legacy_dir = os.path.expanduser("~/.cyborg")
@@ -157,13 +145,13 @@ def _config_dirs():
     ]
 
 
-def show_config_info():
+def show_config_info() -> None:
     bundled = files('cyborg') / 'default_config'
     click.secho("Bundled default config:", bold=True)
     click.secho(f"  {bundled}\n")
 
     click.secho("Candidate config directories (checked in order):", bold=True)
-    active = None
+    active: Optional[str] = None
     for label, path in _config_dirs():
         exists = os.path.exists(path)
         marker = click.style("exists", fg="green") if exists else click.style("not found", fg="red")
@@ -179,7 +167,7 @@ def show_config_info():
         click.secho("No config directory found. Run `cyborg config copy` to install the default config.", fg="yellow")
 
 
-def copy_default_config():
+def copy_default_config() -> None:
     for _, path in _config_dirs():
         if os.path.exists(path):
             click.secho(f"Config directory already exists: {path}", fg="yellow")
@@ -200,7 +188,18 @@ def copy_default_config():
 
 
 class Borg:
-    def __init__(self, dry_run=True, backup_name='default'):
+    settings_dir: str
+    settings_file: str
+    installed_apps: str
+    timestamp_file: str
+    dry_run: str
+    destination: str
+    passphrase: str
+    exclude_list: str
+    source: list[str]
+    now: datetime.datetime
+
+    def __init__(self, dry_run: bool = True, backup_name: str = 'default') -> None:
         log(f'Using backup named: {backup_name}', msg_type='info')
 
         result = run_prog(['pidof', '-sx', 'borg'])
@@ -223,14 +222,14 @@ class Borg:
 
         self.now = datetime.datetime.now()
 
-    def check_file(self, filename):
+    def check_file(self, filename: str) -> None:
         if filename.startswith('ssh://'):
-            return True
+            return
 
         if not os.path.exists(filename):
             error(f'file does not exist: {filename}.')
 
-    def load_settings(self, backup_name):
+    def load_settings(self, backup_name: str) -> None:
         config = configparser.ConfigParser(inline_comment_prefixes=('#',))
         try:
             config.read(self.settings_file)
@@ -239,7 +238,7 @@ class Borg:
 
         try:
             settings = config[backup_name]
-        except KeyError as e:
+        except KeyError:
             error(f'{self.settings_file} does not exist or does not contain a "[{backup_name}]" section.')
         try:
             destination = settings['destination'].strip('"\'')
@@ -268,8 +267,7 @@ class Borg:
         except KeyError as e:
             error(f'Key not set in {self.settings_file}: {e}')
 
-
-    def status(self):
+    def status(self) -> None:
         # show a list of all backup sets
         cmd = [self.passphrase, 'borg', 'list', '--short', self.destination]
         result = run_prog(cmd)
@@ -296,13 +294,12 @@ class Borg:
         ]
         [click.secho(i[0].lstrip(), fg=i[1]) for i in commands]
 
-
-    def save_last_run(self):
+    def save_last_run(self) -> None:
         timestamp = self.now.isoformat() + '\n'
         with open(self.timestamp_file, 'w') as f:
             f.write(timestamp)
 
-    def run(self):
+    def run(self) -> None:
         # generate list of installed applications
         installed_generator = '/home/sm/bin/backup-apps-list'
         result = run_prog([installed_generator])
@@ -336,8 +333,7 @@ class Borg:
         self.prune()
         self.save_last_run()
 
-
-    def prune(self):
+    def prune(self) -> None:
         cmd = [
             self.passphrase, 'borg', 'prune', self.dry_run, '--debug', self.destination,
             f'--prefix="{socket.gethostname()}__"',
@@ -350,8 +346,7 @@ class Borg:
             error(errmsg)
         log('Borg prune successful')
 
-
-    def extras(self):
+    def extras(self) -> None:
         """Print out extra commands that can be copied and pasted to the command line"""
         last_backup = 'BACKUP_NAME'
         commands = [
