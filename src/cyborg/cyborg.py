@@ -2,19 +2,14 @@
 
 import os
 import sys
-import re
-import argparse
-import textwrap
 import datetime
 import subprocess
 import configparser
 import socket
 import shutil
+from importlib.resources import files
 from pathlib import Path
-from pprint import pprint as pp
-
-
-USER_HOME = '/home/sm'
+from platformdirs import user_config_dir
 
 
 try:
@@ -56,7 +51,7 @@ def log_error(msg):
 
 
 def log_cmd(msg):
-    if type(msg) == list:
+    if isinstance(msg, list):
         msg = ' '.join(msg)
     log(msg, msg_type='cmd')
 
@@ -67,11 +62,8 @@ def warn(msg):
 
 def error(msg):
     log_error(msg)
-    notify(msg)
     now = datetime.datetime.now().isoformat()
-    yell = '!' * 50
-    alert_filename = f'CYBORG-ERROR--{now}--{yell}'
-    # alert_file = Path(USER_HOME, alert_filename)
+    alert_filename = f'CYBORG-ERROR--{now}--{"!" * 50}'
     alert_file = Path(Path.home(), alert_filename)
     alert_file.touch()
     alert_file.write_text(msg)
@@ -93,28 +85,6 @@ def run_prog(cmd):
     result.stdout = result.stdout.decode('utf-8').strip()
     result.stderr = result.stderr.decode('utf-8').strip()
     return result
-
-
-def notify(msg):
-    return
-    notify = '/home/sm/bin/cron-notify-send'
-    if not os.path.exists(notify):
-        click.secho(f'{notify} does not exist', fg='red', bold=True)
-        sys.exit(1)
-    title = 'Cyborg'
-    # 'XDG_RUNTIME_DIR=/run/user/$(id -u)',
-    cmd = [notify, title, msg]
-    result = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    print(result)
-
-
-def split_list(data, chunks):
-    k, m = divmod(len(data), chunks)
-    return (data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(chunks))
 
 
 def columnize(data):
@@ -145,6 +115,90 @@ def columnize(data):
     return columnized.strip()
 
 
+def get_config_dir():
+    """
+    Check for configuration directory in standard locations using platformdirs.
+    Falls back to legacy ~/.cyborg if the standard location doesn't exist but the legacy one does.
+    Finally checks the project root for a .cyborg directory.
+    """
+    app_name = "cyborg"
+    config_dir = user_config_dir(app_name)
+    if os.path.exists(config_dir):
+        log(f"Using configuration directory: {config_dir}")
+        return config_dir
+
+    # Legacy check
+    legacy_dir = os.path.expanduser("~/.cyborg")
+    if os.path.exists(legacy_dir):
+        log(f"Using configuration directory: {legacy_dir}")
+        return legacy_dir
+
+    # Project root check
+    # Assumes structure: project_root/src/cyborg/cyborg.py
+    project_root = Path(__file__).resolve().parent.parent.parent
+    project_config_dir = project_root / ".cyborg"
+    if project_config_dir.exists():
+        log(f"Using configuration directory: {project_config_dir}")
+        return str(project_config_dir)
+
+    log(f"Configuration directory not found, defaulting to: {config_dir}")
+    return config_dir
+
+
+def _config_dirs():
+    """Return list of (label, path) for all candidate config directories."""
+    platform_dir = user_config_dir("cyborg")
+    legacy_dir = os.path.expanduser("~/.cyborg")
+    project_dir = str(Path(__file__).resolve().parent.parent.parent / ".cyborg")
+    return [
+        ("Platform (~/.config/cyborg)", platform_dir),
+        ("Legacy (~/.cyborg)",          legacy_dir),
+        ("Project root (.cyborg)",       project_dir),
+    ]
+
+
+def show_config_info():
+    bundled = files('cyborg') / 'default_config'
+    click.secho("Bundled default config:", bold=True)
+    click.secho(f"  {bundled}\n")
+
+    click.secho("Candidate config directories (checked in order):", bold=True)
+    active = None
+    for label, path in _config_dirs():
+        exists = os.path.exists(path)
+        marker = click.style("exists", fg="green") if exists else click.style("not found", fg="red")
+        click.secho(f"  {label}")
+        click.secho(f"    {path}  [{marker}]")
+        if exists and active is None:
+            active = path
+
+    print()
+    if active:
+        click.secho(f"Active config: {active}", fg="green", bold=True)
+    else:
+        click.secho("No config directory found. Run `cyborg config copy` to install the default config.", fg="yellow")
+
+
+def copy_default_config():
+    for _, path in _config_dirs():
+        if os.path.exists(path):
+            click.secho(f"Config directory already exists: {path}", fg="yellow")
+            click.secho("Remove it first if you want to reinstall the default config.")
+            return
+
+    dest = Path(user_config_dir("cyborg"))
+    dest.mkdir(parents=True, exist_ok=True)
+
+    bundled = files('cyborg').joinpath('default_config')
+    for item in bundled.iterdir():
+        dest_file = dest / item.name
+        dest_file.write_bytes(item.read_bytes())
+        click.secho(f"  Copied: {dest_file}")
+
+    click.secho(f"\nDefault config installed to: {dest}", fg="green", bold=True)
+    click.secho("Edit config.ini to set your backup destinations.")
+
+
 class Borg:
     def __init__(self, dry_run=True, backup_name='default'):
         log(f'Using backup named: {backup_name}', msg_type='info')
@@ -153,11 +207,10 @@ class Borg:
         if not result.returncode:
             error('Borg already running, wait for it to finish.')
 
-        settings_dir = os.path.expanduser('~/.cyborg')
-        self.settings_file = os.path.join(settings_dir, 'config.ini')
-        self.installed_apps = os.path.join(settings_dir, 'installed-apps.txt')
-        # self.exclude_list = os.path.join(settings_dir, 'exclude')
-        self.timestamp_file = os.path.join(settings_dir, 'LAST-RUN')
+        self.settings_dir = get_config_dir()
+        self.settings_file = os.path.join(self.settings_dir, 'config.ini')
+        self.installed_apps = os.path.join(self.settings_dir, 'installed-apps.txt')
+        self.timestamp_file = os.path.join(self.settings_dir, 'LAST-RUN')
 
         self.dry_run = '--dry-run'
         if not dry_run:
@@ -166,14 +219,9 @@ class Borg:
         # load settings file
         self.load_settings(backup_name)
 
-        # check all file/dir existence
-        # self.check_file(self.destination)
         self.check_file(self.exclude_list)
 
-        dt = datetime.datetime.now()
-        self.now = dt
-        # self.last_started = dt.strftime('%Y-%m-%d')
-        # self.timestamp = dt.strftime('%Y-%m-%d__%H-%M')
+        self.now = datetime.datetime.now()
 
     def check_file(self, filename):
         if filename.startswith('ssh://'):
@@ -189,8 +237,6 @@ class Borg:
         except configparser.ParsingError as e:
             error(' '.join(str(e).split()))
 
-        # pp(config.items())
-        # exit()
         try:
             settings = config[backup_name]
         except KeyError as e:
@@ -205,7 +251,7 @@ class Borg:
         except KeyError:
             self.remote_destination = None
 
-        self.destination = self.fix(destination)
+        self.destination = os.path.expanduser(destination)
 
         try:
             phrase = settings['passphrase']
@@ -214,14 +260,19 @@ class Borg:
         self.passphrase = f'BORG_PASSPHRASE={phrase}' if phrase else ''
 
         try:
-            self.exclude_list = settings['exclude']
+            exclude = settings['exclude']
+            exclude = os.path.expanduser(exclude)
+            if not os.path.isabs(exclude):
+                exclude = os.path.join(self.settings_dir, exclude)
+            self.exclude_list = exclude
         except KeyError as e:
             error(f'Key not set in {self.settings_file}: {e}')
 
+        try:
+            self.source = [s.strip() for s in settings['source'].split(',')]
+        except KeyError as e:
+            error(f'Key not set in {self.settings_file}: {e}')
 
-    def fix(self, path):
-        path = os.path.expanduser(path)
-        return path
 
     def status(self):
         # show a list of all backup sets
@@ -259,27 +310,18 @@ class Borg:
     def run(self, upload_to_remote=False, backup_name='settings'):
         # generate list of installed applications
         installed_generator = '/home/sm/bin/backup-apps-list'
-        try:
-            result = run_prog([installed_generator])
-        except FileNotFoundError:
+        result = run_prog([installed_generator])
+        if result.returncode:
             warn(f'Installed list generator not found: {installed_generator}')
-        with open(self.installed_apps, 'w') as f:
-            f.write(result.stdout)
-            log(f'Wrote {self.installed_apps}')
-
-        # take snapshot of my crontab
-        crontab_list = ['crontab', '-l']
-        result = run_prog(crontab_list)
-        crontab_file = os.path.expanduser('~/modified-system-files/crontab.txt')
-        with open(crontab_file, 'w+') as f:
-            f.write(result.stdout)
-            log(f'Wrote {crontab_file}')
+        else:
+            with open(self.installed_apps, 'w') as f:
+                f.write(result.stdout)
+                log(f'Wrote {self.installed_apps}')
 
         # backup
         timestamp = self.now.strftime('%Y-%m-%d__%H-%M')
         archive_name = f'{self.destination}::{socket.gethostname()}__{timestamp}'
         log(f'Starting backup to {archive_name}')
-        notify('Starting backup')
 
         cmd = [self.passphrase, 'borg', 'create', self.dry_run, '-v',
                f'--exclude-from={self.exclude_list}',
@@ -287,23 +329,18 @@ class Borg:
                '--compression=zlib,6',
                '--exclude-caches',
                archive_name,
-               os.path.expanduser('~')
+               *self.source,
         ]
         result = run_prog(cmd)
         if result.returncode == 1:
             warn(result.stderr)
         elif result.returncode == 2:
-            errmsg = result.stderr
-            # remove the usage info from the error message
-            # errmsg = re.sub('(usage.*|\[--.*|ARCHIVE \[.*)', '', errmsg).strip()
-            errmsg = errmsg.split('\n')[-1]  # last line of error message
+            errmsg = result.stderr.split('\n')[-1]
             error(errmsg)
         log('Borg backup successful')
-        notify('Backup complete')
         self.prune()
-        if upload_to_remote:
-            self.rclone()
         self.save_last_run()
+
 
     def prune(self):
         cmd = [
@@ -314,65 +351,10 @@ class Borg:
         ]
         result = run_prog(cmd)
         if result.returncode:
-            errmsg = result.stderr
-            errmsg = errmsg.split('\n')[-1]  # last line of error message
+            errmsg = result.stderr.split('\n')[-1]
             error(errmsg)
         log('Borg prune successful')
 
-    def rclone(self):
-        if not self.remote_destination:
-            error(f'remote_destination not set in {self.settings_file}')
-
-        result = run_prog(['pidof', '-sx', 'rclone'])
-        if not result.returncode:
-            error('rclone already running, aborting this remote upload.')
-
-        log(f'Starting remote backup to {self.remote_destination}')
-        cmd = [
-            'rclone', self.dry_run, 'sync',
-            '--stats-log-level=NOTICE',
-            '--stats=10000m',
-            '--skip-links',
-            '--verbose',
-            '--one-file-system',
-            '--max-size=1G',
-            '--fast-list',
-            '--exclude-from=/home/sm/.cyborg/exclude-rclone',
-            '--exclude-if-present=IGNORE-RCLONE',
-            self.destination, self.remote_destination,
-        ]
-        # cmd = ['rclone', self.dry_run, 'sync',
-        #        '--stats-log-level=NOTICE',
-        #        '--stats=10000m',
-        #        '--max-size=1G',
-        #        '--delete-excluded',
-        #        # '--b2-hard-delete',
-        #        # '--delete-before',
-        #        '--exclude-if-present=IGNORE-RCLONE',
-        #        self.destination, self.remote_destination]
-        result = run_prog(cmd)
-        if result.returncode:
-            errmsg = result.stderr
-            errmsg = errmsg.split('\n')[-1]  # last line of error message
-            error(errmsg)
-
-        # Break apart rclone output and re-join with no spaces and all on one line.
-        #
-        # From this:
-        # ----------
-        #   2019/06/16 19:02:11 NOTICE:
-        #   Transferred:   	         0 / 0 Bytes, -, 0 Bytes/s, ETA -
-        #   Errors:                 0
-        #   Checks:              9798 / 9798, 100%
-        #   Transferred:            0 / 0, -
-        #   Elapsed time:        5.9s
-        #
-        # To this:
-        # --------
-        #   Transferred 0 / 0 Bytes, -, 0 Bytes/s, ETA - || Errors 0 || Checks 9798 / 9798, 100% || Transferred 0 / 0, - || Elapsed time 5.9s
-        #
-        stats = ' || '.join([': '.join([j.strip() for j in i.split(':')]) for i in result.stderr.split('\n')][1:])
-        log(f'Rclone successful: {stats}')
 
     def extras(self):
         """Print out extra commands that can be copied and pasted to the command line"""
@@ -400,109 +382,8 @@ class Borg:
             [f'{self.passphrase} borg mount {self.destination} MOUNTPOINT', 'yellow'],
             [f'{self.passphrase} borg umount MOUNTPOINT', 'yellow'],
             [f'{self.passphrase} borg prune {self.dry_run} -v {self.destination} --prefix="{socket.gethostname()}__" --keep-within=10d --keep-weekly=4 --keep-monthly=6 --keep-yearly=1', 'yellow'],
-
-            ['', ''],
-            ['# RCLONE', 'green'],
-            ['# ------', 'green'],
-            [f'rclone check {self.destination} {self.remote_destination}', 'yellow'],
-            [f'rclone check --size-only {self.destination} {self.remote_destination}  # faster', 'yellow'],
-            [f'rclone sync -P {self.destination} {self.remote_destination}  # fancy progress', 'yellow'],
         ]
         [click.secho(i[0].lstrip(), fg=i[1]) for i in commands]
         print()
         click.secho('https://borgbackup.readthedocs.io', fg='blue', underline=True)
         click.secho('https://github.com/borgbackup/borg', fg='blue', underline=True)
-        click.secho('https://rclone.org', fg='blue', underline=True)
-
-
-def init(cli_args):
-    try:
-        borg = Borg(dry_run=cli_args.dry_run, backup_name=cli_args.name)
-    except AttributeError:
-        borg = Borg(backup_name=cli_args.name)
-
-    if cli_args.subparser_name == 'run':
-        borg.run(cli_args.remote)
-    elif cli_args.subparser_name == 'prune':
-        borg.prune()
-    else:
-        getattr(borg, cli_args.subparser_name)()
-
-
-if __name__ == '__main__':
-    help_msg = textwrap.dedent('''
-    🤖 Backup using Borg and Rclone
-
-    https://borgbackup.readthedocs.io
-    https://github.com/borgbackup
-    https://rclone.org
-
-    Configuration information is pulled from ~/.cyborg/config.ini.
-    File exclude info is pulled from ~/.cyborg/exclude
-
-    Required support apps:
-    ----------------------
-    Generate list of installed applications: ~/bin/backup-apps-list
-    Gui notifications from cron: ~/bin/cron-nofify-send
-
-    Initial setup:
-    --------------
-    Run `cyborg extras` to get the proper command, then run the
-    `borg init ...` command.
-
-    INI file:
-    ---------
-    The ini file must contain a section with a destination and source
-    fields.  The name of the section can be anything but the default
-    is 'settings'.
-
-    It can contain multiple sections and they are specified with the
-    name argument, eg: `cyborg --name=XXX`.  This allows multiple
-    backups to run with different settings.
-    ''')
-
-    parser = argparse.ArgumentParser(
-        description=help_msg,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    subparsers = parser.add_subparsers(dest='subparser_name')
-    parser.add_argument('-n', '--name', default='default',
-                        help='The name of a backup to run')
-
-    # run
-    run = subparsers.add_parser('run', help='Run the backup')
-    run.add_argument('-d', '--dry-run', default=False, action='store_true')
-    run.add_argument('-r', '--remote', action='store_true')
-
-    # prune
-    prune = subparsers.add_parser('prune', help='Prune the repo')
-    prune.add_argument('-d', '--dry-run', action='store_true')
-
-    # status
-    status = subparsers.add_parser('status', help='Check the backup')
-
-    # rclone
-    rclone = subparsers.add_parser(
-        'rclone', help='Use rclone to copy the repo to remote storage')
-    rclone.add_argument('-d', '--dry-run', action='store_true')
-
-    # extras
-    extras = subparsers.add_parser(
-        'extras',
-        help='Output extra commands to be copied and pasted in the terminal')
-
-    args = parser.parse_args()
-    if not args.subparser_name:
-        parser.print_help(sys.stderr)
-        exit()
-    init(args)
-
-    'sudo sync; echo 1 | sudo tee /proc/sys/vm/drop_caches'
-
-
-    # rclone sync -v --dry-run --one-file-system --exclude-from=/home/sm/.cyborg/exclude-rclone --max-size=4G  --exclude-if-present=IGNORE-RSYNC --dump=filters /home/sm/ backblaze:8cylinder-backup
-    #
-    # rclone sync -Pv --dry-run --one-file-system --exclude-from=/home/sm/.cyborg/exclude-rclone --max-size=1G  --exclude-if-present=IGNORE-RCLONE /home/sm/ backblaze:8cylinder-backup
-    #
-    # rclone sync -v --one-file-system --exclude-from=/home/sm/.cyborg/exclude-rclone --max-size=1G --delete-excluded  --exclude-if-present=IGNORE-RCLONE /home/sm/ backblaze:8cylinder-backup 2> rclone.txt
-    #
-    # rclone sync --skip-links -v --one-file-system --exclude-from=/home/sm/.cyborg/exclude-rclone --max-size=1G --delete-excluded --b2-hard-delete --delete-before --exclude-if-present=IGNORE-RCLONE /home/sm/ backblaze:8cylinder-backup

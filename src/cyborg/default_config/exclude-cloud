@@ -22,6 +22,7 @@ CYBORG-ERROR*
 */public_html/uploads
 */.composer/cache
 /home/sm/addepar
+/home/sm/misc
 /home/sm/mc2-mac
 /home/sm/mc2-xps
 /home/sm/work-backup

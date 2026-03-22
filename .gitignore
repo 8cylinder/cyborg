@@ -1,1 +1,3 @@
-sink.yaml
+.cyborg
+*OFF
+__pycache__

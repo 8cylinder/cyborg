@@ -1,3 +1,5 @@
 
 *** 🤖 Cyborg
 A python wrapper around Borg backup (https://borgbackup.readthedocs.io).
+https://github.com/spslater/borgapi
+https://github.com/CyberfusionIO/python3-cyberfusion-borg-support

@@ -1,0 +1,22 @@
+
+* Crontab
+Run every two hours during the day, write to the log in =~/.cyborg= and
+upload to the remote storage as well.
+#+begin_src text
+0 8,10,12,14,16,18,20 * * * $HOME/bin/cyborg run --remote >> $HOME/.cyborg/log
+#+end_src
+
+* Logrotate setup
+in =/etc/logrotate.d= create a file called =cyborg=. Add the
+following to it.
+#+begin_src text
+/home/sm/.cyborg/log {
+    daily
+    size 1M
+    rotate 7
+    compress
+    missingok
+}
+#+end_src
+
+https://askubuntu.com/a/614187
