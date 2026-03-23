@@ -5,14 +5,6 @@ from .cyborg import Borg, show_config_info, copy_default_config
 
 
 def init(cli_args: argparse.Namespace) -> None:
-    if cli_args.subparser_name == 'config':
-        action = getattr(cli_args, 'action', None)
-        if action == 'copy':
-            copy_default_config()
-        else:
-            show_config_info()
-        return
-
     if not cli_args.name:
         sys.stderr.write("error: a profile name is required, eg: cyborg nas run\n")
         sys.exit(1)
@@ -80,12 +72,16 @@ def main() -> None:
         'extras',
         help='Output extra commands to be copied and pasted in the terminal')
 
-    # config
-    config = subparsers.add_parser(
-        'config',
-        help='Show config info, or copy the default config with "config copy"')
-    config.add_argument('action', nargs='?', choices=['copy'],
-                        help='copy: install the default config to ~/.config/cyborg/')
+# Handle `cyborg config [copy]` before full arg parsing — it never
+    # takes a profile name, so argparse would wrongly consume 'config'
+    # as the name positional and then fail on 'copy'.
+    if len(sys.argv) >= 2 and sys.argv[1] == 'config':
+        action = sys.argv[2] if len(sys.argv) >= 3 else None
+        if action == 'copy':
+            copy_default_config()
+        else:
+            show_config_info()
+        return
 
     args = parser.parse_args()
     if not args.subparser_name:
