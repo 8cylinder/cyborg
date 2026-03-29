@@ -123,8 +123,7 @@ def get_config_dir() -> str:
 
     # Project root check
     # Assumes structure: project_root/src/cyborg/cyborg.py
-    project_root = Path(__file__).resolve().parent.parent.parent
-    project_config_dir = project_root / ".cyborg"
+    project_config_dir = Path(__file__).resolve().parent / "default_config"
     if project_config_dir.exists():
         log(f"Using configuration directory: {project_config_dir}")
         return str(project_config_dir)
@@ -137,12 +136,77 @@ def _config_dirs() -> list[tuple[str, str]]:
     """Return list of (label, path) for all candidate config directories."""
     platform_dir = user_config_dir("cyborg")
     legacy_dir = os.path.expanduser("~/.cyborg")
-    project_dir = str(Path(__file__).resolve().parent.parent.parent / ".cyborg")
+    project_dir = str(Path(__file__).resolve().parent / "default_config")
     return [
-        ("Platform (~/.config/cyborg)", platform_dir),
-        ("Legacy (~/.cyborg)",          legacy_dir),
-        ("Project root (.cyborg)",       project_dir),
+        ("Platform (~/.config/cyborg)",            platform_dir),
+        ("Legacy (~/.cyborg)",                     legacy_dir),
+        ("Project (src/cyborg/default_config)",    project_dir),
     ]
+
+
+def validate_config(config_dir: str) -> None:
+    config_file = os.path.join(config_dir, 'config.ini')
+    print()
+    click.secho("Config validation:", bold=True)
+
+    if not os.path.exists(config_file):
+        click.secho(f"  config.ini  [{click.style('not found', fg='red')}]")
+        return
+
+    click.secho(f"  config.ini  [{click.style('found', fg='green')}]")
+
+    config = configparser.ConfigParser(inline_comment_prefixes=('#',))
+    try:
+        config.read(config_file)
+    except configparser.ParsingError as e:
+        click.secho(f"  Parse error: {e}", fg='red')
+        return
+
+    profiles = [s for s in config.sections()]
+    if not profiles:
+        click.secho("  No profiles found in config.ini", fg='yellow')
+        return
+
+    for profile in profiles:
+        print()
+        click.secho(f"  [{profile}]", bold=True)
+        section = config[profile]
+
+        # destination
+        destination = section.get('destination', '').strip().strip('"\'')
+        if not destination:
+            click.secho(f"    destination  [{click.style('missing', fg='red')}]")
+        elif destination.startswith('ssh://') or '@' in destination:
+            click.secho(f"    destination  {destination}  [{click.style('remote', fg='blue')}]")
+        elif os.path.exists(os.path.expanduser(destination)):
+            click.secho(f"    destination  {destination}  [{click.style('exists', fg='green')}]")
+        else:
+            click.secho(f"    destination  {destination}  [{click.style('not found', fg='red')}]")
+
+        # source
+        source_raw = section.get('source', '').strip()
+        if not source_raw:
+            click.secho(f"    source  [{click.style('missing', fg='red')}]")
+        else:
+            for src in [s.strip() for s in source_raw.split(',')]:
+                expanded = os.path.expanduser(src)
+                if os.path.exists(expanded):
+                    click.secho(f"    source  {src}  [{click.style('exists', fg='green')}]")
+                else:
+                    click.secho(f"    source  {src}  [{click.style('not found', fg='red')}]")
+
+        # exclude
+        exclude = section.get('exclude', '').strip()
+        if not exclude:
+            click.secho(f"    exclude  [{click.style('missing', fg='red')}]")
+        else:
+            exclude_expanded = os.path.expanduser(exclude)
+            if not os.path.isabs(exclude_expanded):
+                exclude_expanded = os.path.join(config_dir, exclude_expanded)
+            if os.path.exists(exclude_expanded):
+                click.secho(f"    exclude  {exclude}  [{click.style('exists', fg='green')}]")
+            else:
+                click.secho(f"    exclude  {exclude}  [{click.style('not found', fg='red')}]")
 
 
 def show_config_info() -> None:
@@ -163,12 +227,15 @@ def show_config_info() -> None:
     print()
     if active:
         click.secho(f"Active config: {active}", fg="green", bold=True)
+        validate_config(active)
     else:
         click.secho("No config directory found. Run `cyborg config copy` to install the default config.", fg="yellow")
 
 
 def copy_default_config() -> None:
-    for _, path in _config_dirs():
+    platform_dir = user_config_dir("cyborg")
+    legacy_dir = os.path.expanduser("~/.cyborg")
+    for path in (platform_dir, legacy_dir):
         if os.path.exists(path):
             click.secho(f"Config directory already exists: {path}", fg="yellow")
             click.secho("Remove it first if you want to reinstall the default config.")
