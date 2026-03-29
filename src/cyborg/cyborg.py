@@ -392,7 +392,8 @@ class Borg:
         ]
         result = run_prog(cmd)
         if result.returncode == 1:
-            warn(result.stderr)
+            # warn(result.stderr)
+            error(result.stderr)
         elif result.returncode == 2:
             errmsg = result.stderr.split('\n')[-1]
             error(errmsg)
