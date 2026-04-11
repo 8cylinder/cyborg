@@ -416,32 +416,68 @@ class Borg:
 
     def extras(self) -> None:
         """Print out extra commands that can be copied and pasted to the command line"""
-        last_backup = 'BACKUP_NAME'
-        commands = [
-            ['', ''],
-            ['# BORG', 'green'],
-            ['# ----', 'green'],
-            ['# show more info:', 'green'],
-            [f'{self.passphrase} borg list {self.destination}', 'yellow'],
-            ['# list all files in last backup:', 'green'],
-            [f'{self.passphrase} borg list {self.destination}::{last_backup}', 'yellow'],
-            ['# show details about backup repo:', 'green'],
-            [f'{self.passphrase} borg info -v {self.destination}', 'yellow'],
-            ['# show details about backup repo and the last backup:', 'green'],
-            [f'{self.passphrase} borg info -v {self.destination}::{last_backup}', 'yellow'],
-
-            [f'{self.passphrase} borg init --encryption=none {self.destination}', 'yellow'],
-            ['# CAUTION, restores to current dir only', 'green'],
-            [f'{self.passphrase} borg restore --dry-run {self.destination}', 'yellow'],
-            [f'{self.passphrase} borg break-lock {self.destination}', 'yellow'],
-            [f'{self.passphrase} borg list {self.destination}', 'yellow'],
-            ['# note: takes a long time', 'green'],
-            [f'{self.passphrase} borg check {self.destination}', 'yellow'],
-            [f'{self.passphrase} borg mount {self.destination} MOUNTPOINT', 'yellow'],
-            [f'{self.passphrase} borg umount MOUNTPOINT', 'yellow'],
-            [f'{self.passphrase} borg prune {self.dry_run} -v {self.destination} --prefix="{socket.gethostname()}__" --keep-within=10d --keep-weekly=4 --keep-monthly=6 --keep-yearly=1', 'yellow'],
+        hostname = socket.gethostname()
+        archive = f'{self.destination}::ARCHIVE_NAME'
+        sections = [
+            {
+                'title': 'LISTING & INFO',
+                'commands': [
+                    ('List all archives in this repo', f'{self.passphrase} borg list {self.destination}'),
+                    ('List all files in a specific archive', f'{self.passphrase} borg list {archive}'),
+                    ('List files matching a pattern in an archive', f'{self.passphrase} borg list {archive} --pattern="sh:home/*/Documents"'),
+                    ('Show repo stats (size, number of archives)', f'{self.passphrase} borg info {self.destination}'),
+                    ('Show detailed info about a specific archive', f'{self.passphrase} borg info {archive}'),
+                ],
+            },
+            {
+                'title': 'RESTORE',
+                'commands': [
+                    ('Dry-run restore to see what would be extracted', f'{self.passphrase} borg extract --dry-run --list {archive}'),
+                    ('Extract entire archive (run from target dir)', f'{self.passphrase} borg extract {archive}'),
+                    ('Extract a specific path from an archive', f'{self.passphrase} borg extract {archive} home/sm/Documents'),
+                    ('Mount repo as filesystem for browsing/restoring', f'{self.passphrase} borg mount {self.destination} /mnt/borg'),
+                    ('Mount a single archive', f'{self.passphrase} borg mount {archive} /mnt/borg'),
+                    ('Unmount when done', f'borg umount /mnt/borg'),
+                ],
+            },
+            {
+                'title': 'PRUNING',
+                'commands': [
+                    ('Dry-run prune to see what would be deleted', f'{self.passphrase} borg prune --dry-run -v --list {self.destination} --glob-archives="{hostname}__*" --keep-within=2d --keep-daily=14 --keep-weekly=4 --keep-monthly=6 --keep-yearly=1'),
+                    ('Prune old archives (mirrors cyborg prune)', f'{self.passphrase} borg prune -v --list {self.destination} --glob-archives="{hostname}__*" --keep-within=2d --keep-daily=14 --keep-weekly=4 --keep-monthly=6 --keep-yearly=1'),
+                    ('Compact repo after pruning (frees disk space)', f'{self.passphrase} borg compact {self.destination}'),
+                ],
+            },
+            {
+                'title': 'MAINTENANCE & TROUBLESHOOTING',
+                'commands': [
+                    ('Verify repo integrity (slow, thorough)', f'{self.passphrase} borg check {self.destination}'),
+                    ('Check a specific archive only', f'{self.passphrase} borg check --archives-only {archive}'),
+                    ('Break stale lock (if borg crashed mid-run)', f'{self.passphrase} borg break-lock {self.destination}'),
+                    ('Delete a specific archive', f'{self.passphrase} borg delete {archive}'),
+                    ('Rename an archive', f'{self.passphrase} borg rename {archive} NEW_NAME'),
+                ],
+            },
+            {
+                'title': 'INITIALISATION',
+                'commands': [
+                    ('Init new repo with no encryption', f'{self.passphrase} borg init --encryption=none {self.destination}'),
+                    ('Init new repo with repokey encryption', f'BORG_PASSPHRASE="secret" borg init --encryption=repokey {self.destination}'),
+                    ('Export repokey for safekeeping', f'{self.passphrase} borg key export {self.destination} /path/to/key.bak'),
+                ],
+            },
         ]
-        [click.secho(i[0].lstrip(), fg=i[1]) for i in commands]
+
         print()
+        for section in sections:
+            click.secho(f'# {section["title"]}', fg='green', bold=True)
+            click.secho(f'# {"-" * len(section["title"])}', fg='green')
+            for description, cmd in section['commands']:
+                click.secho(f'# {description}:', fg='green')
+                click.secho(cmd.strip(), fg='yellow')
+                print()
+            print()
+
+        click.secho('DOCS', bold=True)
         click.secho('https://borgbackup.readthedocs.io', fg='blue', underline=True)
         click.secho('https://github.com/borgbackup/borg', fg='blue', underline=True)
