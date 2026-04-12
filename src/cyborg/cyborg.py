@@ -420,7 +420,7 @@ class Borg:
         archive = f'{self.destination}::ARCHIVE_NAME'
         sections = [
             {
-                'title': 'LISTING & INFO',
+                'title': 'Listing & info',
                 'commands': [
                     ('List all archives in this repo', f'{self.passphrase} borg list {self.destination}'),
                     ('List all files in a specific archive', f'{self.passphrase} borg list {archive}'),
@@ -430,7 +430,7 @@ class Borg:
                 ],
             },
             {
-                'title': 'RESTORE',
+                'title': 'Restore',
                 'commands': [
                     ('Dry-run restore to see what would be extracted', f'{self.passphrase} borg extract --dry-run --list {archive}'),
                     ('Extract entire archive (run from target dir)', f'{self.passphrase} borg extract {archive}'),
@@ -441,7 +441,7 @@ class Borg:
                 ],
             },
             {
-                'title': 'PRUNING',
+                'title': 'Pruning',
                 'commands': [
                     ('Dry-run prune to see what would be deleted', f'{self.passphrase} borg prune --dry-run -v --list {self.destination} --glob-archives="{hostname}__*" --keep-within=2d --keep-daily=14 --keep-weekly=4 --keep-monthly=6 --keep-yearly=1'),
                     ('Prune old archives (mirrors cyborg prune)', f'{self.passphrase} borg prune -v --list {self.destination} --glob-archives="{hostname}__*" --keep-within=2d --keep-daily=14 --keep-weekly=4 --keep-monthly=6 --keep-yearly=1'),
@@ -449,7 +449,7 @@ class Borg:
                 ],
             },
             {
-                'title': 'MAINTENANCE & TROUBLESHOOTING',
+                'title': 'Maintenance & troubleshooting',
                 'commands': [
                     ('Verify repo integrity (slow, thorough)', f'{self.passphrase} borg check {self.destination}'),
                     ('Check a specific archive only', f'{self.passphrase} borg check --archives-only {archive}'),
@@ -459,7 +459,7 @@ class Borg:
                 ],
             },
             {
-                'title': 'INITIALISATION',
+                'title': 'Initialisation',
                 'commands': [
                     ('Init new repo with no encryption', f'{self.passphrase} borg init --encryption=none {self.destination}'),
                     ('Init new repo with repokey encryption', f'BORG_PASSPHRASE="secret" borg init --encryption=repokey {self.destination}'),
@@ -468,16 +468,16 @@ class Borg:
             },
         ]
 
-        print()
+        lines = []
         for section in sections:
-            click.secho(f'# {section["title"]}', fg='green', bold=True)
-            click.secho(f'# {"-" * len(section["title"])}', fg='green')
+            lines.append(
+                click.style("# ", fg="green")
+                +
+                click.style(section["title"], fg='green', bold=True, underline=True)
+            )
+            # lines.append(click.style(f'# {"-" * len(section["title"])}', fg='green'))
             for description, cmd in section['commands']:
-                click.secho(f'# {description}:', fg='green')
-                click.secho(cmd.strip(), fg='yellow')
-                print()
-            print()
-
-        click.secho('DOCS', bold=True)
-        click.secho('https://borgbackup.readthedocs.io', fg='blue', underline=True)
-        click.secho('https://github.com/borgbackup/borg', fg='blue', underline=True)
+                lines.append(click.style(f'# {description}:', fg='green'))
+                lines.append(click.style(cmd.strip(), fg='yellow'))
+            lines.append('')
+        click.echo_via_pager('\n'.join(lines), color=True)
