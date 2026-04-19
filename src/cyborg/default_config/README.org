@@ -93,14 +93,3 @@ following to it.
 #+end_src
 
 https://askubuntu.com/a/614187
-
-
-
-Convert systemd units from user to system (root install)
-
-* systemd-install.bash now requires root; detects target user via SUDO_USER
-* units install to /etc/systemd/system/ instead of ~/.config/systemd/user/
-* service units run as the correct user via User=, HOME=, XDG_RUNTIME_DIR=
-* cyborg-hooks.service now also covers reboot.target
-* systemd-backup.bash shipped as commented-out template with date logging enabled
-* README updated with sudo usage and system-level journalctl/systemctl commands
