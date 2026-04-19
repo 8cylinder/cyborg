@@ -11,13 +11,13 @@ Two scripts handle automated backups via systemd user units.
 2. Edit =~/.config/cyborg/systemd-backup.bash= and set the profiles you
    want to run (they must match section names in =config.ini=).
 
-3. Run the install script:
+3. Run the install script as root:
    #+begin_src shell
-   bash ~/.config/cyborg/systemd-install.bash
+   sudo bash ~/.config/cyborg/systemd-install.bash
    #+end_src
 
 ** What gets installed
-Three units are written to =~/.config/systemd/user/= and enabled:
+Three units are written to =/etc/systemd/system/= and enabled:
 
 | Unit                  | Purpose                                    |
 |-----------------------+--------------------------------------------|
@@ -31,11 +31,44 @@ fires it immediately when the system comes back up.
 
 ** Useful commands
 #+begin_src shell
-systemctl --user list-timers           # show next scheduled run
-systemctl --user status cyborg-backup.timer
-systemctl --user status cyborg-hooks.service
-journalctl --user -u cyborg-backup.service   # view backup logs
+  systemctl list-timers                  # show next scheduled run
+  systemctl status cyborg-backup.timer
+  systemctl status cyborg-hooks.service
+  journalctl -u cyborg-backup.service   # view backup logs
+
+
+  # All cyborg unit logs
+  journalctl -u "cyborg-*"
+
+  # Specific units
+  journalctl -u cyborg-hooks.service
+  journalctl -u cyborg-backup.service
+  journalctl -u cyborg-backup.timer
+
+  journalctl -u cyborg-hooks.service; \
+      journalctl -u cyborg-backup.service; \
+      journalctl -u cyborg-backup.timer
+
+  # Follow live output
+  journalctl -u cyborg-backup.service -f
+
+  # Last boot only
+  journalctl -u "cyborg-*" -b
+
+  The backup script itself also writes to log files:
+
+  # Timestamp log (written on every run)
+  ~/.config/cyborg/log-date.log
+
+  # Per-profile logs (once you uncomment the profile loop in systemd-backup.bash)
+  ~/.config/cyborg/log-nas.log
+  ~/.config/cyborg/log-borgbase.log
+
+  To check timer status and when the next run is scheduled:
+
+  systemctl --user list-timers cyborg-backup.timer
 #+end_src
+
 
 * Crontab (alternative)
 Run every two hours during the day, write to a log called =~/cyborg.log=.  Or
@@ -60,3 +93,14 @@ following to it.
 #+end_src
 
 https://askubuntu.com/a/614187
+
+
+
+Convert systemd units from user to system (root install)
+
+* systemd-install.bash now requires root; detects target user via SUDO_USER
+* units install to /etc/systemd/system/ instead of ~/.config/systemd/user/
+* service units run as the correct user via User=, HOME=, XDG_RUNTIME_DIR=
+* cyborg-hooks.service now also covers reboot.target
+* systemd-backup.bash shipped as commented-out template with date logging enabled
+* README updated with sudo usage and system-level journalctl/systemctl commands

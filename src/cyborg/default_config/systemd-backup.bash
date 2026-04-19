@@ -7,13 +7,15 @@
 
 set -euo pipefail
 
-PROFILES=(
-    nas
-    borgbase
-)
+date "+%Y-%m-%d_%H-%M-%S" >> "$HOME/.config/cyborg/log-date.log"
 
-CYBORG="$HOME/.local/bin/cyborg"
+# PROFILES=(
+#     nas
+#     borgbase
+# )
 
-for profile in "${PROFILES[@]}"; do
-    "$CYBORG" run $profile >> "$HOME/.config/cyborg/log-${profile}.log"
-done
+# CYBORG="$HOME/.local/bin/cyborg"
+
+# for profile in "${PROFILES[@]}"; do
+#     "$CYBORG" run "$profile" >> "$HOME/.config/cyborg/log-${profile}.log"
+# done
