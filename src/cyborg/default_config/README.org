@@ -1,9 +1,49 @@
 
-* Crontab
-Run every two hours during the day, write to the log in =~/.cyborg= and
-upload to the remote storage as well.
+* Systemd (recommended)
+Two scripts handle automated backups via systemd user units.
+
+** Setup
+1. Copy the default config if you haven't already:
+   #+begin_src shell
+   cyborg config copy
+   #+end_src
+
+2. Edit =~/.config/cyborg/systemd-backup.bash= and set the profiles you
+   want to run (they must match section names in =config.ini=).
+
+3. Run the install script:
+   #+begin_src shell
+   bash ~/.config/cyborg/systemd-install.bash
+   #+end_src
+
+** What gets installed
+Three units are written to =~/.config/systemd/user/= and enabled:
+
+| Unit                  | Purpose                                    |
+|-----------------------+--------------------------------------------|
+| =cyborg-backup.service= | Oneshot unit that runs =systemd-backup.bash= |
+| =cyborg-backup.timer=   | Fires on boot, every 2 h, and on wake      |
+| =cyborg-hooks.service=  | Runs before sleep and before shutdown      |
+
+Wake-up coverage is handled by =Persistent=true= on the timer: if a
+scheduled run was missed while the machine was asleep or off, systemd
+fires it immediately when the system comes back up.
+
+** Useful commands
+#+begin_src shell
+systemctl --user list-timers           # show next scheduled run
+systemctl --user status cyborg-backup.timer
+systemctl --user status cyborg-hooks.service
+journalctl --user -u cyborg-backup.service   # view backup logs
+#+end_src
+
+* Crontab (alternative)
+Run every two hours during the day, write to a log called =~/cyborg.log=.  Or
+two profiles every 2 hours at 15 min after the hour
+
 #+begin_src text
-0 8,10,12,14,16,18,20 * * * $HOME/bin/cyborg run --remote >> $HOME/.cyborg/log
+  0  8,10,12,14,16,18,20  *  *  *  $HOME/.local/bin/cyborg run nas >> $HOME/cyborg.log
+  15  */2  *  *  *  $HOME/.local/bin/cyborg run nas >> $HOME/.config/cyborg/log-nas.log 2>&1 ; $HOME/.local/bin/cyborg run borgbase >> $HOME/.config/cyborg/log-borbase.log 2>&1
 #+end_src
 
 * Logrotate setup
