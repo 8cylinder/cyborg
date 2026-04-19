@@ -1,99 +1,78 @@
-import argparse
-import sys
-import textwrap
+import click
 from importlib.metadata import version
 from .cyborg import Borg, show_config_info, copy_default_config
 
 
-def init(cli_args: argparse.Namespace) -> None:
-    try:
-        borg = Borg(dry_run=cli_args.dry_run, backup_name=cli_args.name)
-    except AttributeError:
-        borg = Borg(backup_name=cli_args.name)
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
-    if cli_args.subparser_name == 'run':
-        borg.run()
-    elif cli_args.subparser_name == 'prune':
-        borg.prune()
-    else:
-        getattr(borg, cli_args.subparser_name)()
-
-
+@click.group(context_settings=CONTEXT_SETTINGS)
+@click.version_option(version('cyborg'), '-V', '--version')
 def main() -> None:
-    help_msg = textwrap.dedent('''
-    🤖 Backup using Borg
+    """Backup using Borg
 
+    \b
     https://borgbackup.readthedocs.io
     https://github.com/borgbackup
-
-    Usage: cyborg COMMAND [NAME] [OPTIONS]
-      eg:  cyborg run nas
-           cyborg extras borgbase
-           cyborg config
-           cyborg config copy
 
     Config is loaded from (in order): ~/.config/cyborg/, ~/.cyborg/,
     or a .cyborg/ directory in the project root.
 
+    \b
     Initial setup:
-    --------------
     Run `cyborg config copy` to install the default config, then edit
     it. Run `cyborg extras NAME` to see the borg init command.
 
+    \b
     INI file sections:
-    ------------------
     Each [section] is a named profile with destination, source, and
     exclude fields. Optionally: passphrase.
-    ''')
-
-    parser = argparse.ArgumentParser(
-        description=help_msg,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('-V', '--version', action='version',
-                        version=f'%(prog)s {version("cyborg")}')
-    subparsers = parser.add_subparsers(dest='subparser_name')
-
-    # run
-    run = subparsers.add_parser('run', help='Run the backup')
-    run.add_argument('name', help='Backup profile name')
-    run.add_argument('-d', '--dry-run', default=False, action='store_true')
-
-    # prune
-    prune = subparsers.add_parser('prune', help='Prune the repo')
-    prune.add_argument('name', help='Backup profile name')
-    prune.add_argument('-d', '--dry-run', action='store_true')
-
-    # status
-    status = subparsers.add_parser('status', help='Check the backup')
-    status.add_argument('name', help='Backup profile name')
-
-    # extras
-    extras = subparsers.add_parser(
-        'extras',
-        help='Output extra commands to be copied and pasted in the terminal')
-    extras.add_argument('name', help='Backup profile name')
-
-    # config
-    config = subparsers.add_parser(
-        'config',
-        help='Show config info, or copy the default config with "config copy"')
-    config.add_argument('action', nargs='?', choices=['copy'],
-                        help='copy: install the default config to ~/.config/cyborg/')
-
-    args = parser.parse_args()
-    if not args.subparser_name:
-        parser.print_help(sys.stderr)
-        sys.exit(0)
-
-    if args.subparser_name == 'config':
-        if args.action == 'copy':
-            copy_default_config()
-        else:
-            show_config_info()
-        return
-
-    init(args)
+    """
 
 
-if __name__ == '__main__':
-    main()
+@main.command()
+@click.argument('name')
+@click.option('-d', '--dry-run', is_flag=True, default=False)
+def run(name: str, dry_run: bool) -> None:
+    """Run the backup."""
+    borg = Borg(dry_run=dry_run, backup_name=name)
+    borg.run()
+
+
+@main.command()
+@click.argument('name')
+@click.option('-d', '--dry-run', is_flag=True, default=False)
+def prune(name: str, dry_run: bool) -> None:
+    """Prune the repo."""
+    borg = Borg(dry_run=dry_run, backup_name=name)
+    borg.prune()
+
+
+@main.command()
+@click.argument('name')
+def status(name: str) -> None:
+    """Check the backup."""
+    borg = Borg(backup_name=name)
+    borg.status()
+
+
+@main.command()
+@click.argument('name')
+def extras(name: str) -> None:
+    """Output extra commands to copy and paste in the terminal."""
+    borg = Borg(backup_name=name)
+    borg.extras()
+
+
+@main.group(invoke_without_command=True)
+@click.pass_context
+def config(ctx: click.Context) -> None:
+    """Show config info, or copy the default config with 'config copy'."""
+    if ctx.invoked_subcommand is None:
+        show_config_info()
+
+
+@config.command('copy')
+def config_copy() -> None:
+    """Install the default config to ~/.config/cyborg/."""
+    copy_default_config()
+
