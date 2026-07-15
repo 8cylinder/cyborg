@@ -48,6 +48,13 @@ fi
 
 chmod +x "$BACKUP_SCRIPT"
 
+# echo $TARGET_USER
+# echo $TARGET_UID
+# echo $TARGET_HOME
+# echo $BACKUP_SCRIPT
+# echo $UNIT_DIR
+# exit
+
 # ---------------------------------------------------------------------------
 # cyborg-backup.service
 # ---------------------------------------------------------------------------

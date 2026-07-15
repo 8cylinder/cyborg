@@ -36,7 +36,6 @@ fires it immediately when the system comes back up.
   systemctl status cyborg-hooks.service
   journalctl -u cyborg-backup.service   # view backup logs
 
-
   # All cyborg unit logs
   journalctl -u "cyborg-*"
 
@@ -60,7 +59,8 @@ fires it immediately when the system comes back up.
   # Timestamp log (written on every run)
   ~/.config/cyborg/log-date.log
 
-  # Per-profile logs (once you uncomment the profile loop in systemd-backup.bash)
+  # Per-profile logs (once you uncomment the profile
+  # loop in systemd-backup.bash)
   ~/.config/cyborg/log-nas.log
   ~/.config/cyborg/log-borgbase.log
 
