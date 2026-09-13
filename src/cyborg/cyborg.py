@@ -53,8 +53,9 @@ def error(msg: str) -> None:
     now = datetime.datetime.now().isoformat()
     alert_filename = f'CYBORG-ERROR--{now}--{"!" * 50}'
     alert_file = Path(Path.home(), alert_filename)
+    error_line = next((line for line in reversed(msg.splitlines()) if line.strip()), '')
     alert_file.touch()
-    alert_file.write_text(msg)
+    alert_file.write_text(error_line)
     sys.exit(1)
 
 
@@ -392,11 +393,9 @@ class Borg:
         ]
         result = run_prog(cmd)
         if result.returncode == 1:
-            # warn(result.stderr)
+            warn(result.stderr)
+        elif result.returncode > 1:
             error(result.stderr)
-        elif result.returncode == 2:
-            errmsg = result.stderr.split('\n')[-1]
-            error(errmsg)
         log('Borg backup successful')
         self.prune()
         self.save_last_run()
@@ -409,9 +408,10 @@ class Borg:
             '--keep-monthly=6', '--keep-yearly=1'
         ]
         result = run_prog(cmd)
-        if result.returncode:
-            errmsg = result.stderr.split('\n')[-1]
-            error(errmsg)
+        if result.returncode == 1:
+            warn(result.stderr)
+        elif result.returncode > 1:
+            error(result.stderr)
         log('Borg prune successful')
 
     def extras(self) -> None:
